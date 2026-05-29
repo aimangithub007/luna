@@ -1,5 +1,9 @@
 # 🌙 Hermes Luna Dashboard
 
+<p align="center">
+  <img src="images/luna.png" alt="Luna Dashboard" width="800">
+</p>
+
 Luna Dashboard adalah antarmuka utama berbasis antarmuka grafis (GUI) untuk sistem **Hermes**. Dashboard ini dibangun menggunakan arsitektur _split-stack_:
 
 - **Frontend** menggunakan React + Vite (untuk UI visual, peta graph 3D kognitif, dsb).
