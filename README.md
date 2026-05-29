@@ -37,23 +37,61 @@ Luna dirancang untuk:
 cd ~/.hermes/luna
 ```
 
-### Langkah 2: Install Dependensi Node.js (WAJIB)
+### Langkah 2: Install Python (Backend)
 
-**Ini adalah langkah paling penting!** Tanpa ini, Luna tidak akan berjalan.
+Luna membutuhkan **Python 3.10+** untuk backend.
+
+**Cek dulu:**
+```bash
+python3 --version
+```
+
+**Kalau belum ada:**
+
+- **Ubuntu/Debian:**
+  ```bash
+  sudo apt update && sudo apt install python3 python3-pip python3-venv -y
+  ```
+- **macOS (Homebrew):**
+  ```bash
+  brew install python@3
+  ```
+- **Windows:** Download installer dari https://python.org — pastikan centang ✅ "Add Python to PATH"
+
+### Langkah 3: Install Dependensi Python (Backend) — WAJIB
+
+Backend menggunakan FastAPI + Uvicorn. **Disarankan pakai virtual environment:**
+
+```bash
+# Buat virtual environment (sekali saja)
+python3 -m venv venv
+
+# Aktifkan
+source venv/bin/activate   # Linux/macOS
+# venv\Scripts\activate    # Windows
+
+# Install library
+pip install -r backend/requirements.txt
+```
+
+**Isi `backend/requirements.txt`:**
+
+| Package | Fungsi |
+|---------|--------|
+| `fastapi` | Web framework backend |
+| `uvicorn[standard]` | HTTP server buat FastAPI |
+| `pyyaml` | Baca file konfigurasi YAML |
+| `ptyprocess` | Spawn proses terminal |
+
+> 💡 **Catatan:** Kalau gamau pake venv, bisa langsung `pip install -r backend/requirements.txt` — tapi venv lebih rapi biar nggak campur sama Python system.
+
+### Langkah 4: Install Dependensi Node.js & Frontend
 
 ```bash
 npm install
 ```
 
-### Langkah 3: Install Dependensi Python (Backend)
-
-Backend menggunakan `server.py` yang memerlukan beberapa paket Python:
-
-```bash
-pip install -r backend/requirements.txt
-```
-
-### Langkah 4: Konfigurasi Environment (Opsional)
+### Langkah 5: Konfigurasi Environment (Opsional)
 
 Salin dan edit file `.env` sesuai kebutuhan:
 
