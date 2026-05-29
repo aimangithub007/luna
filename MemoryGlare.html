@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph — Memory 3D</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "three":         "https://cdn.jsdelivr.net/npm/three@0.157.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.157.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#000305;
+    color:#e8eaf0;
+    font-family:'SF Mono','Fira Code',monospace;
+    overflow:hidden; height:100vh; width:100vw;
+  }
+  #canvas { display:block; position:absolute; top:0; left:0; z-index:0; }
+
+  /* HUD */
+  #hud {
+    position:absolute; top:0; left:0; right:0; z-index:10;
+    padding:18px 24px; display:flex; align-items:flex-start; justify-content:space-between;
+    background:linear-gradient(to bottom,rgba(0,3,5,.92) 0%,transparent 100%);
+    pointer-events:none;
+  }
+  #hud-left { display:flex; flex-direction:column; gap:4px; }
+  #hud-title { font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:#2a3545; }
+  #hud-stats { font-size:13px; color:#3a4a5a; }
+  #hud-stats span { color:#7a9ab4; font-weight:600; }
+  #legend { display:flex; gap:16px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+  .leg { display:flex; align-items:center; gap:6px; font-size:10px; letter-spacing:.1em; color:#2a3545; text-transform:uppercase; }
+  .leg-dot { width:7px; height:7px; border-radius:50%; }
+
+  /* Tooltip */
+  #tooltip {
+    position:absolute; z-index:20;
+    background:rgba(0,3,6,.96); border:.5px solid rgba(255,255,255,.12);
+    border-radius:10px; padding:10px 14px; font-size:12px;
+    pointer-events:none; display:none; min-width:160px; backdrop-filter:blur(20px);
+  }
+  #tooltip .tip-name { font-size:13px; font-weight:600; color:#e8eaf0; margin-bottom:4px; }
+  #tooltip .tip-type { font-size:10px; letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }
+  #tooltip .tip-row  { display:flex; justify-content:space-between; gap:12px; color:#2a3a4a; font-size:11px; margin-top:2px; }
+  #tooltip .tip-row span { color:#5a7a94; }
+
+  /* Controls */
+  #controls {
+    position:absolute; bottom:24px; left:0; right:0; z-index:10;
+    display:flex; justify-content:center; gap:10px; pointer-events:all; flex-wrap:wrap; padding:0 16px;
+  }
+  .btn {
+    background:rgba(255,255,255,.03); border:.5px solid rgba(255,255,255,.1);
+    color:#3a5060; font-family:'SF Mono',monospace; font-size:11px;
+    letter-spacing:.08em; padding:7px 14px; border-radius:6px;
+    cursor:pointer; transition:all .2s; text-transform:uppercase;
+  }
+  .btn:hover { background:rgba(255,255,255,.07); color:#8ab0c4; border-color:rgba(255,255,255,.2); }
+
+  #add-notif {
+    position:absolute; bottom:72px; left:50%; transform:translateX(-50%);
+    background:rgba(0,3,6,.94); border:.5px solid rgba(255,255,255,.12);
+    border-radius:8px; padding:8px 16px; font-size:12px; color:#5a7a94;
+    z-index:20; opacity:0; pointer-events:none; transition:opacity .4s; white-space:nowrap;
+  }
+  #add-notif.show { opacity:1; }
+
+  /* Sidebar */
+  #sidebar {
+    position:absolute; right:0; top:0; bottom:0; width:264px; z-index:15;
+    background:rgba(0,3,6,.94); border-left:.5px solid rgba(255,255,255,.06);
+    backdrop-filter:blur(20px); transform:translateX(100%);
+    transition:transform .35s cubic-bezier(.4,0,.2,1);
+    padding:20px 16px; display:flex; flex-direction:column; gap:12px; overflow-y:auto;
+  }
+  #sidebar.open { transform:translateX(0); }
+  #sidebar-close { position:absolute; top:14px; right:14px; background:none; border:none; color:#2a3545; font-size:16px; cursor:pointer; }
+  #sidebar-close:hover { color:#e8eaf0; }
+  #sidebar h3 { font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:#2a3545; }
+  #sidebar .node-name { font-size:15px; font-weight:600; color:#e8eaf0; word-break:break-word; }
+  #sidebar .node-type-badge { display:inline-block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:3px 8px; border-radius:4px; margin-top:2px; }
+  .divider { height:.5px; background:rgba(255,255,255,.05); flex-shrink:0; }
+  #sidebar .meta-row { display:flex; justify-content:space-between; font-size:12px; }
+  #sidebar .meta-row .k { color:#2a3545; }
+  #sidebar .meta-row .v { color:#5a7a94; }
+  #sidebar-connections { display:flex; flex-direction:column; gap:6px; }
+  .conn-item { font-size:11px; color:#3a5060; padding:6px 8px; background:rgba(255,255,255,.02); border-radius:5px; border:.5px solid rgba(255,255,255,.05); cursor:pointer; transition:all .15s; }
+  .conn-item:hover { color:#7aaac4; border-color:rgba(255,255,255,.1); background:rgba(255,255,255,.04); }
+  .conn-item .rel { font-size:10px; color:#1e2d3a; margin-top:2px; }
+
+  /* Loading */
+  #loading {
+    position:absolute; inset:0; background:#000305; display:flex;
+    align-items:center; justify-content:center; z-index:100;
+    flex-direction:column; gap:14px; transition:opacity .6s;
+  }
+  #loading .ld-label { font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:#2a3545; }
+  #loading .ld-sub   { font-size:9px; letter-spacing:.12em; color:#16222e; margin-top:-8px; }
+  #loading .ld-bar   { width:140px; height:1px; background:rgba(255,255,255,.04); }
+  #loading .ld-fill  { height:100%; background:#4ab0d0; width:0%; transition:width .4s ease; }
+
+  /* Error */
+  #err-overlay {
+    position:absolute; inset:0; background:#000305;
+    display:none; align-items:center; justify-content:center; z-index:200;
+    flex-direction:column; gap:12px; padding:40px; text-align:center;
+  }
+  #err-overlay.show { display:flex; }
+  #err-overlay .err-title { font-size:10px; letter-spacing:.18em; color:#fb923c; text-transform:uppercase; }
+  #err-overlay .err-msg   { font-size:12px; color:#2a3545; max-width:420px; line-height:1.8; }
+  #err-overlay .err-code  { font-size:11px; color:#3a5060; background:rgba(255,255,255,.02); border:.5px solid rgba(255,255,255,.06); border-radius:6px; padding:10px 16px; max-width:480px; word-break:break-all; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+
+<div id="loading">
+  <div class="ld-label">Initialising memory graph</div>
+  <div class="ld-sub" id="ld-step">loading modules…</div>
+  <div class="ld-bar"><div class="ld-fill" id="ld-fill"></div></div>
+</div>
+
+<div id="err-overlay">
+  <div class="err-title">⚠ Initialisation failed</div>
+  <div class="err-msg" id="err-msg"></div>
+  <div class="err-code" id="err-code"></div>
+  <button class="btn" style="margin-top:8px" onclick="location.reload()">↺ Retry</button>
+</div>
+
+<div id="hud">
+  <div id="hud-left">
+    <div id="hud-title">Memory Graph · 3D</div>
+    <div id="hud-stats">
+      <span id="st-nodes">0</span> nodes &nbsp;·&nbsp;
+      <span id="st-edges">0</span> connections &nbsp;·&nbsp;
+      <span id="st-size">0 KB</span> total
+    </div>
+  </div>
+  <div id="legend">
+    <div class="leg"><div class="leg-dot" style="background:#4ab8d8"></div>Document</div>
+    <div class="leg"><div class="leg-dot" style="background:#9b72f0"></div>Code</div>
+    <div class="leg"><div class="leg-dot" style="background:#f08030"></div>Image</div>
+    <div class="leg"><div class="leg-dot" style="background:#38c870"></div>Data</div>
+    <div class="leg"><div class="leg-dot" style="background:#e060a8"></div>Note</div>
+    <div class="leg"><div class="leg-dot" style="background:#e8a820"></div>Core</div>
+  </div>
+</div>
+
+<div id="tooltip">
+  <div class="tip-name" id="tip-name"></div>
+  <div class="tip-type" id="tip-type"></div>
+  <div class="tip-row">Size        <span id="tip-size"></span></div>
+  <div class="tip-row">Connections <span id="tip-conns"></span></div>
+  <div class="tip-row">Modified    <span id="tip-date"></span></div>
+</div>
+
+<div id="controls">
+  <button class="btn" onclick="addRandomNode()">+ Add Node</button>
+  <button class="btn" onclick="toggleAutoRotate()">⟳ Auto Rotate</button>
+  <button class="btn" onclick="resetCamera()">⌂ Reset View</button>
+  <button class="btn" onclick="toggleLayout()">⊞ Recluster</button>
+</div>
+<div id="add-notif"></div>
+
+<div id="sidebar">
+  <button id="sidebar-close" onclick="closeSidebar()">✕</button>
+  <h3>Node Details</h3>
+  <div class="node-name" id="sb-name"></div>
+  <div><span class="node-type-badge" id="sb-badge"></span></div>
+  <div class="divider"></div>
+  <div class="meta-row"><span class="k">File size</span> <span class="v" id="sb-size"></span></div>
+  <div class="meta-row"><span class="k">Type</span>      <span class="v" id="sb-ext"></span></div>
+  <div class="meta-row"><span class="k">Modified</span>  <span class="v" id="sb-date"></span></div>
+  <div class="meta-row"><span class="k">Workspace</span> <span class="v" id="sb-ws"></span></div>
+  <div class="divider"></div>
+  <h3>Connected Nodes</h3>
+  <div id="sidebar-connections"></div>
+</div>
+
+<script type="module">
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const setLoad = (pct, step) => {
+  const f = document.getElementById('ld-fill');
+  const s = document.getElementById('ld-step');
+  if (f) f.style.width = pct + '%';
+  if (s && step) s.textContent = step;
+};
+let _failTimer = setTimeout(() => showError('Boot timeout (>10s)', 'Coba refresh halaman.'), 10000);
+window.addEventListener('error', ev => showError(ev.message, (ev.filename||'')+':'+(ev.lineno||'')));
+window.addEventListener('unhandledrejection', ev => showError(String(ev.reason), ''));
+
+function showError(msg, detail) {
+  clearTimeout(_failTimer);
+  const ld = document.getElementById('loading');
+  if (ld) ld.style.display = 'none';
+  document.getElementById('err-msg').textContent  = msg;
+  document.getElementById('err-code').textContent = detail;
+  document.getElementById('err-overlay').classList.add('show');
+}
+function dismissLoading() {
+  clearTimeout(_failTimer);
+  const ld = document.getElementById('loading');
+  if (ld) { ld.style.opacity = '0'; setTimeout(() => ld.remove(), 700); }
+}
+
+// ── Imports ───────────────────────────────────────────────────────────────────
+setLoad(10, 'loading three.js…');
+import * as THREE from 'three';
+setLoad(36, 'loading postprocessing…');
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+setLoad(62, 'building scene…');
+
+// ── Data ──────────────────────────────────────────────────────────────────────
+// Warna lebih jenuh dan kontras di atas background hitam
+const TYPE_COLORS = {
+  document: 0x4ab8d8,
+  code:     0x9b72f0,
+  image:    0xf08030,
+  data:     0x38c870,
+  note:     0xe060a8,
+  core:     0xe8a820
+};
+const TYPE_CSS = {
+  document: '#4ab8d8',
+  code:     '#9b72f0',
+  image:    '#f08030',
+  data:     '#38c870',
+  note:     '#e060a8',
+  core:     '#e8a820'
+};
+
+const MOCK_FILES = [
+  {id:1,  name:'project-brief.md',  type:'document', size:42000,   ws:'Main',     modified:'2d ago'},
+  {id:2,  name:'README.md',         type:'document', size:18000,   ws:'Main',     modified:'5h ago'},
+  {id:3,  name:'index.js',          type:'code',     size:28000,   ws:'Dev',      modified:'1h ago'},
+  {id:4,  name:'app.py',            type:'code',     size:95000,   ws:'Dev',      modified:'3h ago'},
+  {id:5,  name:'schema.sql',        type:'data',     size:61000,   ws:'DB',       modified:'1d ago'},
+  {id:6,  name:'dataset.csv',       type:'data',     size:340000,  ws:'Research', modified:'4d ago'},
+  {id:7,  name:'notes.md',          type:'note',     size:8200,    ws:'Personal', modified:'12h ago'},
+  {id:8,  name:'hero.png',          type:'image',    size:180000,  ws:'Assets',   modified:'1w ago'},
+  {id:9,  name:'logo.svg',          type:'image',    size:12000,   ws:'Assets',   modified:'2w ago'},
+  {id:10, name:'core-memory.json',  type:'core',     size:520000,  ws:'Core',     modified:'just now'},
+  {id:11, name:'api.js',            type:'code',     size:47000,   ws:'Dev',      modified:'6h ago'},
+  {id:12, name:'components.jsx',    type:'code',     size:88000,   ws:'Dev',      modified:'2h ago'},
+  {id:13, name:'research-notes.md', type:'note',     size:33000,   ws:'Research', modified:'3d ago'},
+  {id:14, name:'config.yaml',       type:'data',     size:5400,    ws:'Dev',      modified:'1w ago'},
+  {id:15, name:'interview.md',      type:'document', size:22000,   ws:'Personal', modified:'5d ago'},
+  {id:16, name:'model-weights.pkl', type:'data',     size:2100000, ws:'Research', modified:'6d ago'},
+  {id:17, name:'styles.css',        type:'code',     size:19000,   ws:'Dev',      modified:'8h ago'},
+  {id:18, name:'architecture.md',   type:'document', size:56000,   ws:'Main',     modified:'3d ago'},
+  {id:19, name:'thumbnail.jpg',     type:'image',    size:94000,   ws:'Assets',   modified:'1w ago'},
+  {id:20, name:'memory-index.json', type:'core',     size:310000,  ws:'Core',     modified:'1h ago'},
+  {id:21, name:'test_suite.py',     type:'code',     size:66000,   ws:'Dev',      modified:'4h ago'},
+  {id:22, name:'meeting-notes.md',  type:'note',     size:14000,   ws:'Personal', modified:'2d ago'},
+  {id:23, name:'analytics.csv',     type:'data',     size:88000,   ws:'Research', modified:'1d ago'},
+  {id:24, name:'banner.png',        type:'image',    size:220000,  ws:'Assets',   modified:'5d ago'},
+  {id:25, name:'utils.js',          type:'code',     size:31000,   ws:'Dev',      modified:'9h ago'},
+];
+const MOCK_EDGES = [
+  [1,2],[1,18],[2,3],[3,11],[3,17],[3,25],[4,5],[4,21],[5,23],[6,23],[6,16],
+  [7,13],[7,22],[8,9],[8,24],[8,19],[9,12],[10,20],[10,1],[10,4],[11,4],[11,14],
+  [12,17],[12,3],[13,1],[14,4],[15,7],[16,6],[18,1],[19,24],[20,10],[21,4],
+  [22,13],[23,6],[24,8],[25,3],[2,18],[5,14],[11,25],[12,9],[15,22],[16,23],[20,1],[21,3]
+];
+
+let nodeData = [...MOCK_FILES];
+let edges    = [...MOCK_EDGES];
+
+// ── Renderer ──────────────────────────────────────────────────────────────────
+const canvas   = document.getElementById('canvas');
+const scene    = new THREE.Scene();
+// Fog tipis — hanya untuk depth perception, tidak mengaburkan graph
+scene.fog      = new THREE.FogExp2(0x000305, 0.006);
+
+const camera   = new THREE.PerspectiveCamera(58, innerWidth/innerHeight, 0.1, 800);
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x000305, 1);   // hitam murni hampir sempurna
+renderer.toneMapping         = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.85;   // exposure rendah → background tetap gelap
+
+setLoad(74, 'setting up bloom…');
+
+// ── Bloom — dikalibrasi agar background tetap gelap ──────────────────────────
+// - strength rendah:   bloom tidak flood ke seluruh scene
+// - threshold tinggi:  hanya objek paling terang (node inti) yang bloom
+// - radius kecil:      cahaya tidak menyebar terlalu jauh
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(
+  new THREE.Vector2(innerWidth, innerHeight),
+  0.9,   // strength  ← turun dari 2.8 → background gelap kembali
+  0.4,   // radius    ← tight glow
+  0.22   // threshold ← hanya objek sangat terang yang bloom
+);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+setLoad(82, 'populating graph…');
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let nodeMeshes = [], edgeLines = [], edgeMeta = [], particles;
+let autoRotate = true, hoveredMesh = null, time = 0;
+let isDragging = false, prevMouse = {x:0,y:0};
+let spherical  = {theta:0.3, phi:1.2, r:80};
+const raycaster = new THREE.Raycaster();
+const mouse     = new THREE.Vector2();
+const clock     = new THREE.Clock();
+
+function updateCamera() {
+  camera.position.set(
+    spherical.r * Math.sin(spherical.phi) * Math.sin(spherical.theta),
+    spherical.r * Math.cos(spherical.phi),
+    spherical.r * Math.sin(spherical.phi) * Math.cos(spherical.theta)
+  );
+  camera.lookAt(0, 0, 0);
+}
+
+// ── Orbit ─────────────────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => { isDragging=true; prevMouse={x:e.clientX,y:e.clientY}; });
+window.addEventListener('mouseup',   () => isDragging=false);
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  spherical.theta -= (e.clientX-prevMouse.x)*0.005;
+  spherical.phi    = Math.max(0.2, Math.min(Math.PI-0.2, spherical.phi+(e.clientY-prevMouse.y)*0.005));
+  prevMouse = {x:e.clientX, y:e.clientY};
+  updateCamera();
+});
+canvas.addEventListener('wheel', e => {
+  spherical.r = Math.max(16, Math.min(200, spherical.r+e.deltaY*0.08));
+  updateCamera();
+}, {passive:true});
+
+// ── Particles — sangat redup ──────────────────────────────────────────────────
+function buildParticles() {
+  const N=500, pos=new Float32Array(N*3), col=new Float32Array(N*3);
+  for (let i=0;i<N;i++) {
+    pos[i*3]  =(Math.random()-.5)*500;
+    pos[i*3+1]=(Math.random()-.5)*500;
+    pos[i*3+2]=(Math.random()-.5)*500;
+    // partikel sangat gelap biru kehijauan
+    const c=new THREE.Color().setHSL(.56+Math.random()*.1, .4, .04+Math.random()*.04);
+    col[i*3]=c.r; col[i*3+1]=c.g; col[i*3+2]=c.b;
+  }
+  const geo=new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  geo.setAttribute('color',    new THREE.BufferAttribute(col,3));
+  particles=new THREE.Points(geo, new THREE.PointsMaterial({
+    size:.28, sizeAttenuation:true, vertexColors:true, transparent:true, opacity:.55
+  }));
+  scene.add(particles);
+}
+
+// ── Graph ─────────────────────────────────────────────────────────────────────
+function getR(size){ return .5+Math.pow(Math.max(0,size-5000)/(2100000-5000),.38)*5.2; }
+
+// Warna edge = rata-rata warna dua node yang terhubung
+function avgColor(ca, cb) {
+  const a=new THREE.Color(ca), b=new THREE.Color(cb);
+  return new THREE.Color((a.r+b.r)/2, (a.g+b.g)/2, (a.b+b.b)/2);
+}
+
+function buildGraph() {
+  nodeMeshes.forEach(m => { scene.remove(m); if(m.userData.halo) scene.remove(m.userData.halo); });
+  edgeLines.forEach(obj => { scene.remove(obj.line); if(obj.glow) scene.remove(obj.glow); });
+  nodeMeshes=[]; edgeLines=[]; edgeMeta=[];
+
+  const positions={};
+  const WS=['Main','Dev','Research','Personal','DB','Assets','Core'];
+
+  nodeData.forEach((f,i) => {
+    const ci=WS.indexOf(f.ws), ca=(ci/WS.length)*Math.PI*2;
+    const r=18+Math.random()*24;
+    const x=Math.cos(ca+i*.3)*r+(Math.random()-.5)*8;
+    const y=(Math.random()-.5)*28;
+    const z=Math.sin(ca+i*.3)*r+(Math.random()-.5)*8;
+    positions[f.id]=new THREE.Vector3(x,y,z);
+
+    const radius=getR(f.size), color=TYPE_COLORS[f.type];
+
+    // Halo halus
+    const halo=new THREE.Mesh(
+      new THREE.SphereGeometry(radius*2.6, 12, 12),
+      new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color),
+        transparent:true, opacity:.04,
+        blending:THREE.AdditiveBlending, depthWrite:false, side:THREE.BackSide
+      })
+    );
+    halo.position.copy(positions[f.id]);
+    scene.add(halo);
+
+    // Node utama — emissive kuat tapi controlled
+    const mesh=new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 32, 32),
+      new THREE.MeshStandardMaterial({
+        color:              new THREE.Color(color).multiplyScalar(.15),
+        emissive:           new THREE.Color(color),
+        emissiveIntensity:  2.8,
+        roughness: .08, metalness: .0
+      })
+    );
+    mesh.position.copy(positions[f.id]);
+    mesh.userData={...f, origPos:positions[f.id].clone(), radius, phase:Math.random()*Math.PI*2, halo};
+    scene.add(mesh);
+    nodeMeshes.push(mesh);
+  });
+
+  // ── Edges — warna dari node sumber, opacity solid, dua layer ─────────────
+  edges.forEach(([a,b], li) => {
+    const pA=positions[a], pB=positions[b]; if(!pA||!pB) return;
+    const nA=nodeData.find(n=>n.id===a), nB=nodeData.find(n=>n.id===b);
+    const edgeColor = avgColor(TYPE_COLORS[nA?.type||'document'], TYPE_COLORS[nB?.type||'document']);
+
+    const bendAmt = 4 + Math.random()*6;
+    const bend=new THREE.Vector3(
+      (Math.random()-.5)*bendAmt,
+      (Math.random()-.5)*bendAmt,
+      (Math.random()-.5)*bendAmt
+    );
+    const mid=new THREE.Vector3().lerpVectors(pA,pB,.5).add(bend);
+    const pts=new THREE.QuadraticBezierCurve3(pA,mid,pB).getPoints(40);
+
+    // Layer 1: garis utama — solid dan jelas
+    const geoMain=new THREE.BufferGeometry().setFromPoints(pts);
+    const matMain=new THREE.LineBasicMaterial({
+      color:       edgeColor,
+      transparent: true,
+      opacity:     0.55,      // ← jauh lebih terlihat dari 0.16
+      blending:    THREE.AdditiveBlending,
+      depthWrite:  false,
+      linewidth:   1
+    });
+    const line=new THREE.Line(geoMain, matMain);
+    scene.add(line);
+
+    // Layer 2: glow ring tipis di atas — cahaya lembut
+    const geoGlow=new THREE.BufferGeometry().setFromPoints(pts);
+    const matGlow=new THREE.LineBasicMaterial({
+      color:       edgeColor,
+      transparent: true,
+      opacity:     0.18,
+      blending:    THREE.AdditiveBlending,
+      depthWrite:  false
+    });
+    const glow=new THREE.Line(geoGlow, matGlow);
+    scene.add(glow);
+
+    const obj={line, glow, a, b, li, edgeColor, mid: mid.clone(), pA: pA.clone(), pB: pB.clone()};
+    edgeLines.push(obj);
+  });
+}
+
+// ── HUD ───────────────────────────────────────────────────────────────────────
+const fmt=b=>b>1e6?(b/1e6).toFixed(1)+' MB':Math.round(b/1000)+' KB';
+function updateHUD(){
+  document.getElementById('st-nodes').textContent=nodeData.length;
+  document.getElementById('st-edges').textContent=edges.length;
+  const tot=nodeData.reduce((s,f)=>s+f.size,0);
+  document.getElementById('st-size').textContent=tot>1e6?(tot/1e6).toFixed(1)+' MB':Math.round(tot/1000)+' KB';
+}
+
+// ── Animate ───────────────────────────────────────────────────────────────────
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta(); time+=dt;
+
+  if (autoRotate&&!isDragging){ spherical.theta+=.0010; updateCamera(); }
+  if (particles){ particles.rotation.y+=.00005; particles.rotation.x+=.000025; }
+
+  nodeMeshes.forEach(mesh=>{
+    const{phase,origPos,halo}=mesh.userData;
+    const pulse=1+Math.sin(time*1.5+phase)*.06;
+    mesh.scale.setScalar(pulse);
+    const nx=origPos.x+Math.sin(time*.22+phase)*.20;
+    const ny=origPos.y+Math.cos(time*.18+phase)*.22;
+    const nz=origPos.z+Math.sin(time*.26+phase*1.1)*.20;
+    mesh.position.set(nx,ny,nz);
+    if(halo) halo.position.set(nx,ny,nz);
+
+    // Pulsasi warna sangat subtle
+    const base=new THREE.Color(TYPE_COLORS[mesh.userData.type]);
+    const hsl={}; base.getHSL(hsl);
+    mesh.material.emissive.setHSL(
+      (hsl.h+Math.sin(time*.28+phase)*.025+1)%1,
+      Math.min(1,hsl.s*1.1), hsl.l
+    );
+    mesh.material.emissiveIntensity=2.4+Math.sin(time*1.8+phase)*.6;
+  });
+
+  // Update edge geometry mengikuti posisi node yang bergerak
+  edgeLines.forEach((obj,li)=>{
+    const mA=nodeMeshes.find(m=>m.userData.id===obj.a);
+    const mB=nodeMeshes.find(m=>m.userData.id===obj.b);
+    if(!mA||!mB) return;
+
+    const bend=new THREE.Vector3(
+      Math.sin(time*.2+li)*2.5,
+      Math.cos(time*.16+li)*2.5,
+      Math.sin(time*.24+li*1.2)*2.5
+    );
+    const mid=new THREE.Vector3().lerpVectors(mA.position,mB.position,.5).add(bend);
+    const pts=new THREE.QuadraticBezierCurve3(mA.position,mid,mB.position).getPoints(40);
+
+    [obj.line, obj.glow].forEach(lineObj => {
+      if (!lineObj) return;
+      const pos=lineObj.geometry.attributes.position;
+      pts.forEach((p,k)=>pos.setXYZ(k,p.x,p.y,p.z));
+      pos.needsUpdate=true;
+    });
+
+    // Pulsasi opacity edge — subtle breathing
+    const breath=.5+Math.sin(time*.4+li*.5)*.12;
+    obj.line.material.opacity = breath;
+    obj.glow.material.opacity = .15+Math.sin(time*.4+li*.5)*.06;
+  });
+
+  composer.render();
+}
+
+// ── Interaction ───────────────────────────────────────────────────────────────
+canvas.addEventListener('mousemove', e=>{
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObjects(nodeMeshes);
+  const tip=document.getElementById('tooltip');
+  if(hits.length){
+    const mesh=hits[0].object;
+    if(hoveredMesh&&hoveredMesh!==mesh) unhover(hoveredMesh);
+    hoveredMesh=mesh; hover(mesh);
+    const d=mesh.userData;
+    document.getElementById('tip-name').textContent   =d.name;
+    document.getElementById('tip-type').style.color   =TYPE_CSS[d.type];
+    document.getElementById('tip-type').textContent   =d.type.toUpperCase()+' · '+d.ws;
+    document.getElementById('tip-size').textContent   =fmt(d.size);
+    document.getElementById('tip-conns').textContent  =edges.filter(([a,b])=>a===d.id||b===d.id).length;
+    document.getElementById('tip-date').textContent   =d.modified;
+    tip.style.display='block';
+    tip.style.left=(e.clientX+16)+'px';
+    tip.style.top=(e.clientY-10)+'px';
+    canvas.style.cursor='pointer';
+  } else {
+    if(hoveredMesh){unhover(hoveredMesh); hoveredMesh=null;}
+    tip.style.display='none';
+    canvas.style.cursor='default';
+  }
+});
+
+canvas.addEventListener('click',()=>{
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObjects(nodeMeshes);
+  if(hits.length) openSidebar(hits[0].object.userData);
+});
+
+function hover(mesh){
+  mesh.material.emissiveIntensity=7.0;
+  if(mesh.userData.halo){ mesh.userData.halo.material.opacity=.18; }
+  // Tebalkan semua edge yang terhubung
+  edgeLines.forEach(obj=>{
+    if(obj.a===mesh.userData.id||obj.b===mesh.userData.id){
+      obj.line.material.opacity=1.0;
+      obj.glow.material.opacity=0.55;
+      // Warnai edge sesuai warna node yang di-hover
+      obj.line.material.color.set(new THREE.Color(TYPE_COLORS[mesh.userData.type]));
+      obj.glow.material.color.set(new THREE.Color(TYPE_COLORS[mesh.userData.type]));
+    }
+  });
+}
+function unhover(mesh){
+  mesh.material.emissiveIntensity=2.4;
+  if(mesh.userData.halo){ mesh.userData.halo.material.opacity=.04; }
+  // Kembalikan edge ke warna aslinya
+  edgeLines.forEach(obj=>{
+    if(obj.a===mesh.userData.id||obj.b===mesh.userData.id){
+      obj.line.material.opacity=0.5;
+      obj.glow.material.opacity=0.15;
+      obj.line.material.color.copy(obj.edgeColor);
+      obj.glow.material.color.copy(obj.edgeColor);
+    }
+  });
+}
+
+// ── Sidebar ───────────────────────────────────────────────────────────────────
+function openSidebar(d){
+  document.getElementById('sb-name').textContent=d.name;
+  const badge=document.getElementById('sb-badge');
+  badge.textContent=d.type; badge.style.background=TYPE_CSS[d.type]+'22'; badge.style.color=TYPE_CSS[d.type];
+  document.getElementById('sb-size').textContent=fmt(d.size);
+  document.getElementById('sb-ext').textContent =d.name.split('.').pop().toUpperCase();
+  document.getElementById('sb-date').textContent=d.modified;
+  document.getElementById('sb-ws').textContent  =d.ws;
+  const connIds=edges.filter(([a,b])=>a===d.id||b===d.id).map(([a,b])=>a===d.id?b:a);
+  document.getElementById('sidebar-connections').innerHTML=connIds.map(id=>{
+    const n=nodeData.find(x=>x.id===id); if(!n) return '';
+    return`<div class="conn-item" onclick="window._focus(${n.id})"><span style="color:${TYPE_CSS[n.type]}">●</span> ${n.name}<div class="rel">${n.ws} · ${fmt(n.size)}</div></div>`;
+  }).join('');
+  document.getElementById('sidebar').classList.add('open');
+}
+window.closeSidebar=()=>document.getElementById('sidebar').classList.remove('open');
+window._focus=id=>{
+  const mesh=nodeMeshes.find(m=>m.userData.id===id); if(!mesh) return;
+  const p=mesh.position, d=p.length();
+  spherical.theta=Math.atan2(p.x,p.z);
+  spherical.phi  =Math.acos(Math.max(-1,Math.min(1,p.y/(d||1))));
+  spherical.r    =d+22; updateCamera(); openSidebar(mesh.userData);
+};
+
+// ── Add node ──────────────────────────────────────────────────────────────────
+const NEW_NAMES=['roadmap.md','pipeline.py','embeddings.pkl','canvas.svg','transcript.txt','model.js','prompts.yaml','results.json','flow.mermaid','spec.md','vectors.npy','scratchpad.md'];
+let addCount=0;
+window.addRandomNode=()=>{
+  const types=Object.keys(TYPE_COLORS), wsList=['Main','Dev','Research','Personal','DB','Assets','Core'];
+  const type=types[Math.floor(Math.random()*types.length)], ws=wsList[Math.floor(Math.random()*wsList.length)];
+  const size=Math.floor(6000+Math.random()*600000), name=NEW_NAMES[addCount++%NEW_NAMES.length];
+  const newId=Math.max(...nodeData.map(n=>n.id))+1;
+  nodeData.push({id:newId,name,type,size,ws,modified:'just now'});
+  nodeMeshes.slice().sort(()=>Math.random()-.5).slice(0,2+Math.floor(Math.random()*3)).forEach(m=>edges.push([m.userData.id,newId]));
+  buildGraph(); updateHUD();
+  const notif=document.getElementById('add-notif');
+  notif.textContent=`"${name}" added to ${ws}`;
+  notif.classList.add('show'); setTimeout(()=>notif.classList.remove('show'),2200);
+};
+
+window.toggleAutoRotate=()=>{ autoRotate=!autoRotate; };
+window.resetCamera     =()=>{ spherical={theta:.3,phi:1.2,r:80}; updateCamera(); };
+window.toggleLayout    =()=>{
+  nodeMeshes.forEach(m=>{
+    const a=Math.random()*Math.PI*2, r=14+Math.random()*26;
+    m.userData.origPos.set(Math.cos(a)*r,(Math.random()-.5)*28,Math.sin(a)*r);
+    m.position.copy(m.userData.origPos);
+    if(m.userData.halo) m.userData.halo.position.copy(m.userData.origPos);
+  });
+};
+
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight); composer.setSize(innerWidth,innerHeight);
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+setLoad(92, 'finalising…');
+buildParticles();
+buildGraph();
+updateHUD();
+updateCamera();
+setLoad(100, 'done ✓');
+setTimeout(dismissLoading, 400);
+animate();
+
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Luna - Hermes Dashboard Backend — Standalone
+# Requirements for backend/server.py (fork of web_server.py)
+
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+pyyaml>=6.0
+ptyprocess>=0.7.0

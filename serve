@@ -1,0 +1,46 @@
+#!/bin/bash
+# ./serve — Development launcher
+# Jalankan backend + frontend sekaligus
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+BACKEND_PORT="${BACKEND_PORT:-8119}"
+
+# Load .env dari dashboard folder kita sendiri
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    set -a
+    source "$SCRIPT_DIR/.env"
+    set +a
+    echo "📄 Loaded .env from dashboard"
+fi
+
+# Cek backend/server.py sudah ada
+if [ ! -f "$SCRIPT_DIR/backend/server.py" ]; then
+    echo "❌  backend/server.py belum ada. Jalankan dulu:"
+    echo "    python setup_backend.py"
+    exit 1
+fi
+
+cleanup() {
+    echo ""
+    echo "🛑 Stopping all..."
+    kill "$UVICORN_PID" "$VITE_PID" 2>/dev/null
+    exit 0
+}
+trap cleanup SIGINT SIGTERM
+
+# Start backend
+echo "🚀 Backend  → http://127.0.0.1:$BACKEND_PORT"
+cd "$SCRIPT_DIR/backend"
+python3 -m uvicorn server:app --port "$BACKEND_PORT" --reload &
+UVICORN_PID=$!
+
+# Start frontend
+DASHBOARD_PORT="${DASHBOARD_PORT:-5173}"
+echo "🌐 Frontend → http://localhost:$DASHBOARD_PORT"
+cd "$SCRIPT_DIR"
+npm run dev -- --port "$DASHBOARD_PORT" &
+VITE_PID=$!
+
+echo ""
+echo "Tekan Ctrl+C untuk stop."
+wait
