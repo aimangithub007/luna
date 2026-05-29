@@ -6,6 +6,8 @@
 
 Luna Dashboard adalah antarmuka utama berbasis antarmuka grafis (GUI) untuk sistem **Hermes**. Dashboard ini dibangun menggunakan arsitektur _split-stack_:
 
+> ⚠️ **DISCLAIMER:** Ini bersifat **experimental**. Lihat dulu kode sebelum install. Kami tidak bertanggung jawab atas apapun yang terjadi pada sistem anda walau harusnya aman-aman saja 😄
+
 - **Frontend** menggunakan React + Vite (untuk UI visual, peta graph 3D kognitif, dsb).
 - **Backend** menggunakan Python (FastAPI + Uvicorn) yang bertindak sebagai _bridging_ data antara web dan agen AI (Agentic Core/9Router).
 
